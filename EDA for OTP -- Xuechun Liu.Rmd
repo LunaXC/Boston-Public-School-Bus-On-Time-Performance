@@ -1,0 +1,483 @@
+---
+title: "EDA for OTP"
+author: "Xuechun Liu"
+date: "2018Äê2ÔÂ8ÈÕ"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(plyr)
+library(data.table)
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(scales)
+library(plotrix)
+```
+
+## Initial Data Set
+```{r}
+OTP = read.csv("18.01.26 On Time Performance Route Data.csv", header = TRUE, na.strings = c("", "NA"))
+na = OTP[is.na(OTP),]
+OTP = na.omit(OTP)
+
+log.OTP = OTP[OTP$Delay > 0,]
+
+ggplot(log.OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Time.Tier,y = Delay,color = Time.Tier, fill = Time.Tier) + 
+  scale_y_log10()+facet_grid(~Type.of.Bus) + 
+  xlab("Time Tier") + ylab("Logarithm (Delay Time > 0)") + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Time Tier facet by Type of Bus")
+
+ggplot(log.OTP)+geom_violin(alpha = 0.3)+geom_jitter(alpha = 0.3)+
+  aes(x = Type.of.Bus,y = Delay,color = Type.of.Bus)+scale_y_log10()+facet_grid(~Time.Tier) + 
+  xlab("Type of Buses") + ylab("Log (Delay Time > 0)") + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Type Of Bus facet by Time Tier")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Type.of.Bus,y = Delay,color = Type.of.Bus, fill = Type.of.Bus) + 
+  facet_grid(~Time.Tier) + 
+  xlab("Type of Buses") + ylab("Log (Delay Time > 0)") + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Type Of Bus facet by Time Tier")
+
+ggplot(OTP) + geom_point() + 
+  aes(x=Total.Rider, y=Delay, colour=Yard) + 
+  facet_grid(~Yard) + 
+  theme(legend.position = "none") + 
+  ggtitle("Relationship between total riders and delay time facet by Yard")
+
+ggplot(OTP) + geom_point() + 
+  aes(x=Total.Rider, y=Delay, colour=Time.Tier) + 
+  facet_grid(~Time.Tier) + 
+  theme(legend.position = "none") + 
+  ggtitle("Relationship between total riders and delay time facet by time tier")
+
+ggplot(OTP) + 
+  geom_point(alpha=0.3) + geom_smooth(method = "lm",se=FALSE,color="black") + 
+  aes(x=Total.Rider, y=Delay, colour=Type.of.Bus) + 
+  facet_grid(Time.Tier~Type.of.Bus) + 
+  ggtitle("Delay time VS the number of riders for 4 types of buses in 3 time tiers") + 
+  theme(axis.title = element_text(size = 12, face="bold"),legend.position = "none") + 
+  geom_hline(yintercept = 0,lty=2,color="red")
+
+ggplot(OTP) + geom_point(alpha = 0.8) + 
+  aes(x=Total.Rider, y=Delay, colour=Yard) + 
+  facet_grid(~Type.of.Bus) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Delay Time VS the Number of Riders for 4 Yards facet by 4 Types of Buses")
+
+#ggplot(OTP[OTP$Tier.Breakdown=="730-830-930",])+geom_line(alpha=0.2)+aes(x=Time.Tier,y=Delay,group=paste(Bus,Date))+
+#  facet_grid(~Type.of.Bus) + geom_smooth(method = "rlm",se=FALSE,color="black")
+```
+
+## Zero Total Riders (Not Important, skip this part for the final report)
+```{r}
+OCT = read.csv("OctoberAM OTP.csv", header = TRUE, na.strings = c("", "NA"))
+OTP = select(OCT, Date, Bus, Planned.Start.Time, Planned.Anchor.Time, ActualArrivalTime, Delay = Arrival.Delay, Departure.Delay, Time.Tier, Type.of.Bus, School, Yard, Tier.Breakdown, CR., DtD, Trip.Distance, Driver, Monitor.)
+na = OTP[is.na(OTP),]
+OTP = na.omit(OTP)
+OTP$Driver = as.factor(OTP$Driver)
+OTP$TotalRider = OTP$CR. + OTP$DtD
+zero = OTP[OTP$TotalRider == 0,]
+droplevels(zero)
+
+Planned.Start.Time = as.POSIXct(zero$Planned.Start.Time,format="%H:%M")
+Departure.Delay = as.numeric(as.character(zero$Departure.Delay))
+ActualArrivalTime = as.POSIXct(zero$ActualArrivalTime,format="%H:%M")
+zero$Trip.Length = as.numeric(ActualArrivalTime - Planned.Start.Time) - Departure.Delay
+zero$speed = round(zero$Trip.Distance / zero$Trip.Length, 3)
+summary(droplevels(zero$Driver))
+
+less_20 = zero[!zero$Trip.Length > 20,]
+more_20 = zero[zero$Trip.Length > 20, ]
+
+summary(zero)
+B = zero[zero$Type.of.Bus == "B",]
+summary(B)
+zero_930 = zero[zero$Time.Tier == "9:30",]
+summary(zero_930)
+
+ggplot(zero)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Time.Tier,y = Delay,color = Time.Tier, fill = Time.Tier) + 
+  facet_grid(~Type.of.Bus) + 
+  xlab("Type of Buses") + ylab("Delay Time") + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold"))
+
+ggplot(zero)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Type.of.Bus,y = Delay,color = Type.of.Bus, fill = Type.of.Bus) + 
+  facet_grid(~Time.Tier) + 
+  xlab("Type of Buses") + ylab("Delay Time > 0") + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold"))
+
+summary(aov(OTP$Delay ~ OTP$Time.Tier))
+```
+
+
+## Whole Dataset  -- Climate & Visibility Set  
+```{r}
+ad = read.csv("AlldaysOTP.csv", header = TRUE, na.strings = c("", "NA"))
+ad$date = as.Date(as.character(ad$Date), format = "%m/%d/%Y")
+ad$Month = month(ad$date)
+ad$Year = year(ad$date)
+ad$climate = 1*ad$rain + 2*ad$snow
+ad$DepartureDelay = as.numeric(ad$DepartureDelay)
+OTP = select(ad, Route, Year, Month, date, ArrivalDelay, DepartureDelay, DepartedOnTime, TimeTier, TypeOfBus, Yard, School, climate, Visibility)
+
+data = data.frame(table(OTP$TypeOfBus))
+labels = c(paste("B: ",round(100*data$Freq[1]/sum(data$Freq),1),'%',sep=''),
+     paste("H: ",round(100*data$Freq[2]/sum(data$Freq),1),'%',sep=""),
+     paste("M: ",round(100*data$Freq[3]/sum(data$Freq),1),'%',sep=""),
+     paste("W: ",round(100*data$Freq[4]/sum(data$Freq),1),'%',sep=""))
+pie3D(data$Freq, labels = labels, main = "Proportion of each type of bus", explode=0.1, radius=.9, labelcex = 1.2,  start=0.7)
+
+ggplot(na.omit(OTP[abs(OTP$ArrivalDelay) < 60,]))+geom_boxplot(alpha = 0.3) + 
+  aes(x = TimeTier,y = ArrivalDelay,color = TimeTier, fill = TimeTier) + 
+  facet_grid(. ~ TypeOfBus) + 
+  theme(axis.title = element_text(size = 14, face="bold"), legend.text = element_text(size = 12, face="bold")) + 
+  ggtitle("Arrival Delay VS Time Tier facet by Type of Bus")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = TimeTier,y = ArrivalDelay,color = TimeTier, fill = TimeTier) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Time Tier facet by Month")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = TypeOfBus,y = ArrivalDelay,color = TypeOfBus, fill = TypeOfBus) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Type of Bus facet by Month")
+
+OTP_17 = OTP[OTP$Year != 2018,]
+ggplot(OTP_17, aes(x = ArrivalDelay, fill = Month)) +
+  geom_histogram(position="dodge") + 
+  facet_grid(Year + Month ~ .)  + xlim(-100, 100) +
+  theme(legend.position = "none", axis.title = element_text(size = 28, face="bold"), axis.ticks.y = element_blank(), axis.text.y = element_blank()) + 
+  ggtitle("Distribution of Arrival Delay in 2017 facet by Month")
+
+
+## Three examples of the arrival delay along with time
+## Not sure if it should be included in the final report
+
+S1 = OTP[OTP$School == "Arrival Delay Along with Time -- Alighieri Elementary",]
+ggplot(S1) + geom_point() + ggtitle("Alighieri Elementary") +
+  aes(x = date, y = ArrivalDelay) + 
+  geom_vline(aes(xintercept=as.numeric(date[67])), linetype=4, color = "red", size=1.1) + 
+  theme(axis.title = element_text(size = 12, face="bold")) + 
+  theme(title = element_text(size = 16, face="bold"), axis.title = element_text(size = 12, face="bold"))
+
+S2 = OTP[OTP$School == "Arrival Delay Along with Time -- Arlington School",]
+ggplot(S2) + geom_point() + ggtitle("Arlington School") +
+  aes(x = date, y = ArrivalDelay) + 
+  geom_vline(aes(xintercept=as.numeric(date[63])), linetype=4, color = "red", size=1.1) + 
+  theme(title = element_text(size = 16, face="bold"), axis.title = element_text(size = 12, face="bold"))
+
+S3 = OTP[OTP$School == "Arrival Delay Along with Time -- New Mission HS",]
+ggplot(S3) + geom_point() + ggtitle("New Mission HS") +
+  aes(x = date, y = ArrivalDelay) + 
+  geom_vline(aes(xintercept=as.numeric(date[59])), linetype=4, color = "red", size=1.1) + 
+  theme(title = element_text(size = 16, face="bold"), axis.title = element_text(size = 12, face="bold"))
+
+ag = aggregate(OTP$climate, list(OTP$Route), sum)
+amax = ag$Group.1[ag$x == 8]
+set.seed(10)
+s = sample(amax, 100, replace = FALSE)
+ss = NULL
+for(i in 1:length(s)){
+  for(j in 1:length(OTP$Route)){
+    if(OTP$Route[j] == s[i]){
+      ss = c(ss, j)
+    }
+  }
+}
+sample = OTP[ss,]
+plot(sample$Visibility, sample$ArrivalDelay, main = "Arrival Delay VS Visibility")
+sample$climate = as.factor(as.character(sample$climate))
+levels(sample$climate) = c("Normal", "Rainy", "Snowy")
+sample1 = sample[sample$ArrivalDelay > 0,]
+ggplot(sample)+geom_boxplot(alpha = 0.5) + 
+  aes(x = climate,y = log(ArrivalDelay),color = climate, fill = climate) + 
+  facet_grid(TimeTier ~ Year + Month) + 
+  theme(axis.title = element_text(size = 16, face="bold"), legend.text = element_text(size = 16, face="bold")) + 
+  ggtitle("Logged Arrival Delay VS Climate for the Routes Which Have Most Abnormal Weather Days facet by Time Tier and Month")
+
+
+## Three sample routes from the routes which have most abnormal weather days
+## Not sure if it should be included in the final report
+## To illustrate no patterns both generally and individually
+
+set.seed(10)
+wow = sample(amax, 10, replace = FALSE)
+d1 = sample[sample$Route == wow[10],]
+plot(d1$Visibility, d1$ArrivalDelay)
+ggplot(d1)+geom_boxplot(alpha = 0.5) + 
+  aes(x = climate,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 16, face="bold"), legend.text = element_text(size = 16, face="bold"))
+ggplot(d1)+geom_point(alpha = 0.3) + 
+  aes(x = Visibility,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold"))
+
+d2 = OTP[OTP$Route == wow[7],]
+plot(d2$Visibility, d2$ArrivalDelay)
+ggplot(d2)+geom_boxplot(alpha = 0.3) + 
+  aes(x = climate,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold"))
+ggplot(d2)+geom_point(alpha = 0.3) + 
+  aes(x = Visibility,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold"))
+
+d3 = OTP[OTP$Route == wow[8],]
+plot(d3$Visibility, d3$ArrivalDelay)
+ggplot(d3)+geom_boxplot(alpha = 0.3) + 
+  aes(x = climate,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold"))
+ggplot(d3)+geom_point(alpha = 0.3) + 
+  aes(x = Visibility,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold"))
+
+OTP$climate = as.factor(as.character(OTP$climate))
+levels(OTP$climate) = c("Normal", "Rainy", "Snowy")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = climate,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Climate facet by Month")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = climate,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(TimeTier ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Climate facet by Time Tier and Month")
+
+
+rain  = OTP[OTP$climate == "Rainy",]
+snow = OTP[OTP$climate == "Snowy",]
+
+plot(OTP$Visibility, OTP$ArrivalDelay)
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Visibility,y = ArrivalDelay) + 
+  facet_grid(. ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Visibility facet by Month")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Visibility,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(TimeTier ~ .) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Visibility facet by Time Tier")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Visibility,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(TimeTier ~ Year + Month) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Visibility facet by Time Tier and Month")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Visibility,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(Year + Month ~ TypeOfBus) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Visibility facet by Type Of Bus and Month")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Visibility,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(Year + Month ~ Yard) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Visibility facet by Yard and Month")
+```
+
+## Whole Dataset -- "Read" Yard, Not sure if this part should be included in the final report
+```{r}
+read = OTP[OTP$Yard == "READ",]
+s_OTP = OTP[abs(OTP$ArrivalDelay) < 60,]
+# s_OTP = na.omit(s_OTP)
+#plot(read[read$Route != "44301101",]$date, read[read$Route != "44301101",]$ArrivalDelay, col = read$Route)
+#text(read[read$Route != "44301101",]$date, read[read$Route != "44301101",]$ArrivalDelay, labels = read$Route)
+
+OTP = OTP[OTP$Yard == na.omit(OTP$Yard),]
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Yard,y = ArrivalDelay,color = Yard, fill = Yard) + 
+  theme(axis.title = element_text(size = 16, face="bold"), legend.text = element_text(size = 12, face="bold")) + 
+  ggtitle("Arrival Delay by Yard")
+
+ggplot(OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = climate,y = ArrivalDelay,color = climate, fill = climate) + 
+  facet_grid(. ~ Yard) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Weather facet by Yard")
+
+r_OTP = s_OTP[s_OTP$TypeOfBus == "B" | s_OTP$TypeOfBus == "H",]
+r_OTP = na.omit(r_OTP)
+ggplot(r_OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Yard,y = ArrivalDelay,color = TypeOfBus, fill = TypeOfBus) + 
+  facet_grid(. ~ TypeOfBus) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay by Yard facet by Type Of Bus")
+
+ggplot(s_OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Yard,y = ArrivalDelay,color = TimeTier, fill = TimeTier) + 
+  facet_grid(. ~ TimeTier) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay by Yard facet by Time Tier")
+
+ggplot(r_OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Yard,y = ArrivalDelay,color = TimeTier, fill = TimeTier) + 
+  facet_grid(TypeOfBus ~ TimeTier) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay by Yard facet by Time Tier and Type Of Bus")
+
+ggplot(s_OTP)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Yard,y = DepartureDelay,color = Yard, fill = Yard) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Departure Delay by Yard")
+
+s_OTP = s_OTP[s_OTP$DepartedOnTime != "#N/A",]
+s_OTP = na.omit(s_OTP)
+s_OTP = droplevels(s_OTP)
+
+ggplot(data = s_OTP, aes(x = Yard, y = DepartedOnTime, fill = factor(DepartedOnTime))) + 
+  geom_bar(stat = "identity") + 
+  xlab("\nYard") + ylab("Departed On Time\n") + 
+  scale_fill_manual(labels = c("No", "Yes"), values = c("Purple", "Pink")) +
+  theme_bw() +
+  guides(color=guide_legend("Departed On Time")) + 
+  ggtitle("Departed On Time by Yard")
+
+md = data.frame(Yard = s_OTP$Yard, DepartedOnTime = s_OTP$DepartedOnTime)
+m = data.frame(table(md))
+ggplot(m, aes(x = Yard, y = Freq, fill = DepartedOnTime)) + 
+  geom_bar(stat = "identity", position = "fill") + 
+  xlab("Yard") + ylab("Departed On Time") + 
+  scale_y_continuous(labels = percent_format()) + 
+  scale_fill_manual(labels = c("No", "Yes"), values = c("Purple", "Pink")) +
+  theme_bw() +
+  guides(color=guide_legend("Departed On Time")) + 
+  ggtitle("Departed On Time by Yard")
+
+E = r_OTP[r_OTP$DepartedOnTime == 1,]
+ggplot(E)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Yard,y = ArrivalDelay,color = TimeTier, fill = TimeTier) + 
+  facet_grid(TypeOfBus ~ TimeTier) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Yard for Routes that Departed On Time facet by Time Tier and Type Of Bus")
+
+D = r_OTP[r_OTP$DepartedOnTime == 0,]
+ggplot(D)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Yard,y = ArrivalDelay,color = TimeTier, fill = TimeTier) + 
+  facet_grid(TypeOfBus ~ TimeTier) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Arrival Delay VS Yard for Routes that Not Departed On Time facet by Time Tier and Type Of Bus")
+
+#y_OTP = s_OTP[!is.na(s_OTP$Yard),]
+#ggplot(y_OTP)+geom_boxplot(alpha = 0.3) + 
+#  aes(x = Yard, y = ArrivalDelay, color = Yard, fill = Yard) + 
+#  facet_grid(. ~ Year + Month) + 
+#  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold"))
+
+#out.read = read[read$ArrivalDelay < -45 & read$ArrivalDelay > -60,]
+#summary(out.read)
+#length(unique(out.read$Route))
+```
+
+## Clean4 Dataset -- Weekday & Weather & Total Rider (DtD Proportion)
+```{r}
+busdata = read.csv("clean4.csv")
+busdata$date = as.Date(as.character(busdata$Date), format = "%m/%d/%Y")
+busdata$Month = as.factor(month(busdata$date))
+busdata$Year = as.factor(year(busdata$date))
+
+med<-as.data.table(busdata)[,median(ArrivalDelay),by=list(days.of.semester,Yard)]
+ggplot(data.frame(days=med$days.of.semester,median=med$V1,Yard=med$Yard))+geom_line(aes(x=(days),y=median,group=Yard))+
+  geom_smooth(alpha=0.3,se=FALSE,aes(x=(days),y=median,color=Yard))+
+   ylab("arrival delay (minutes)")+
+   xlab("days of semester (Fall 2018)") + 
+  ggtitle("Arrival Delay Along with Time by Yard")
+
+med<-as.data.table(busdata)[,median(ArrivalDelay),by=list(days.of.semester,weekday)]
+ggplot(data.frame(days=med$days.of.semester,median=med$V1,weekday=med$weekday))+geom_line(aes(x=(days),y=median,group=weekday))+
+geom_smooth(alpha=0.3,se=FALSE,aes(x=(days),y=median,color=weekday))+
+   ylab("arrival delay (minutes)")+
+   xlab("days of semester (Fall 2018)") + 
+  ggtitle("Arrival Delay Along with Time by Week Day")
+
+rain = busdata[busdata$rain == 1,]
+summary(rain$weekday)
+snow = busdata[busdata$snow == 1,]
+summary(snow$weekday)
+
+
+## Routes in the rainy day and the day a week before and the day a week after
+## Not sure if it should be included in the final report
+## To illustrate no patterns
+
+demo1 = busdata[busdata$Date == "10/19/2017" | busdata$Date == "10/26/2017" | busdata$Date == "11/2/2017",]
+ggplot(demo1)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Date,y = TrafficMin,color = Date, fill = Date) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Traffic Time on the Rainy Day 10/26/2017, and the Day A Week Before and the Day A Week After")
+
+demo2 = busdata[busdata$Date == "9/13/2017" | busdata$Date == "9/20/2017" | busdata$Date == "9/27/2017",]
+ggplot(demo2)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Date,y = TrafficMin,color = Date, fill = Date) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Traffic Time on the Rainy Day 9/20/2017, and the Day A Week Before and the Day A Week After")
+
+demo3 = busdata[busdata$Date == "9/15/2017" | busdata$Date == "9/22/2017" | busdata$Date == "9/29/2017",]
+ggplot(demo3)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Date,y = TrafficMin,color = Date, fill = Date) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) +
+  ggtitle("Traffic Time on the Rainy Day 9/22/2017, and the Day A Week Before and the Day A Week After")
+
+demo4 = busdata[busdata$Date == "11/15/2017" | busdata$Date == "11/22/2017" | busdata$Date == "11/29/2017",]
+ggplot(demo3)+geom_boxplot(alpha = 0.3) + 
+  aes(x = Date,y = TrafficMin,color = Date, fill = Date) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Traffic Time on the Rainy Day 11/22/2017, and the Day A Week Before and the Day A Week After")
+
+#ggplot(demo1)+geom_line(aes(x=Date,y=ArrivalDelay,group=Route))+
+#geom_smooth(alpha=0.3,se=FALSE,aes(x=Date,y=ArrivalDelay,color=Route))+
+#   ylab("arrival delay (minutes)")+
+#   xlab("Date")
+
+ggplot(busdata)+geom_boxplot(alpha = 0.3) + 
+  aes(x = TypeOfBus,y = TotalRider,color = TypeOfBus, fill = TypeOfBus) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Total Rider Number VS Type Of Bus")
+
+#ggplot(busdata)+geom_point(aes(x=TotalRider,y=Route,group=TypeOfBus, color = TypeOfBus)) + 
+#   ylab("Route")+
+#   xlab("Total Riders")
+
+ggplot(busdata) + geom_boxplot(alpha = 0.3) + 
+  aes(x = weekday,y = ArrivalDelay,color = weekday, fill = weekday) +  
+  facet_grid(Month ~ TimeTier) + 
+  scale_y_log10()+
+   ylab("Arrival Delay")+
+   xlab("Week Day") + 
+  ggtitle("Arrival Delay VS Week Day facet by Time Tier and Month")
+
+busdata$DtD_Prop = busdata$DtD / busdata$TotalRider
+ggplot(busdata)+geom_boxplot(alpha = 0.3) + 
+  aes(x = TypeOfBus,y = DtD_Prop,color = TypeOfBus, fill = TypeOfBus) + 
+  facet_grid(Month ~ TimeTier) + 
+  theme(axis.title = element_text(size = 12, face="bold"), legend.text = element_text(size = 10, face="bold")) + 
+  ggtitle("Door-to-Door Riders Proportion VS Type of Bus facet by Time Tier and Month")
+```
+
+
